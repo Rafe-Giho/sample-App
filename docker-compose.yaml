@@ -1,0 +1,78 @@
+services:
+  web:
+    build:
+      context: ./httpd
+    container_name: httpd-test
+    ports:
+      - "80:80"
+    environment:
+      TZ: Asia/Seoul
+      VHOST_SERVER_NAME: web01
+      TOMCAT_UPSTREAM_HOST: was
+      TOMCAT_UPSTREAM_PORT: "8080"
+
+      # (주의) Apache Require ip에서 0.0.0.0/0 불가
+      # 테스트면 httpd 템플릿에서 Require all granted로 분기 권장
+      ALLOWED_PROXY_IP: "172.16.0.0/12"
+    depends_on:
+      - was
+    networks:
+      - appnet
+
+  was:
+    build:
+      context: ./tomcat9
+    container_name: tomcat-test
+    ports:
+      - "8080:8080"   # 디버깅용(원하면 제거 가능)
+    environment:
+      TZ: Asia/Seoul
+
+      # DB 연결
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: board
+
+      # 외부 이미지 API
+      DOG_API_URL: "https://dog.ceo/api/breeds/image/random"
+
+      # ✅ setenv.sh가 읽는 프록시 변수 (Forward proxy로 httpd 사용)
+      HTTP_PROXY_HOST: web
+      HTTP_PROXY_PORT: "80"
+      HTTPS_PROXY_HOST: web
+      HTTPS_PROXY_PORT: "80"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - appnet
+
+  db:
+    build:
+      context: ./mariadb
+    container_name: mariadb-board
+    ports:
+      - "3306:3306"   # 필요 없으면 제거 가능(운영형이면 외부 공개 비권장)
+    environment:
+      TZ: Asia/Seoul
+      MYSQL_ROOT_PASSWORD: root1234
+      MARIADB_DATABASE: board
+      MARIADB_USER: giho
+      MARIADB_PASSWORD: giho0723
+    volumes:
+      - mariadb-board-data:/var/lib/mysql
+    networks:
+      - appnet
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  mariadb-board-data:
+
